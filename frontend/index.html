@@ -3,152 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telemetry Anomaly Detection - Edge AI Dashboard</title>
-    <!-- Tailwind CSS para Estética Corporativa -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js para las gráficas M2M -->
+    <title>Anom_Metrics_Panel_v2.1</title>
+    <!-- Raw CSS with no Tailwind, aiming for a utilitarian, Grafana/SCADA-inspired look -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #3e3e42;
+            --text-main: #d4d4d4;
+            --text-muted: #858585;
+            --accent-green: #4CAF50;
+            --accent-red: #f44336;
+            --accent-blue: #007acc;
+            --accent-orange: #ff9800;
+        }
+
         body {
-            background-color: #0d1117;
-            color: #c9d1d9;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Consolas', 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 10px;
+            font-size: 13px;
         }
-        .glass-panel {
-            background: rgba(22, 27, 34, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(48, 54, 61, 0.5);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+
+        /* Top header bar mimicking a raw system status bar */
+        .system-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #333333;
+            padding: 5px 15px;
+            border-bottom: 2px solid var(--accent-blue);
+            margin-bottom: 15px;
         }
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
+
+        .system-header h1 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: normal;
+            color: #ffffff;
+            letter-spacing: 1px;
         }
-        ::-webkit-scrollbar-track {
-            background: #0d1117; 
+
+        .status-indicators {
+            display: flex;
+            gap: 15px;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #30363d; 
-            border-radius: 4px;
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #484f58; 
+
+        .led-green { width: 10px; height: 10px; background-color: var(--accent-green); border-radius: 50%; box-shadow: 0 0 5px var(--accent-green); }
+        .led-red { width: 10px; height: 10px; background-color: var(--accent-red); border-radius: 50%; box-shadow: 0 0 5px var(--accent-red); animation: blink 1s infinite alternate; }
+        
+        @keyframes blink { from { opacity: 1; } to { opacity: 0.4; } }
+
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            grid-template-rows: auto 1fr;
+            gap: 10px;
+            height: calc(100vh - 50px);
         }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+        }
+
+        .panel-header {
+            background-color: #2d2d30;
+            padding: 4px 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Metrics Sidebar */
+        .metrics-sidebar {
+            grid-row: 1 / 3;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .stat-box {
+            padding: 15px 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        .stat-value.danger { color: var(--accent-red); }
+        .stat-value.ok { color: var(--accent-green); }
+
+        /* Raw Log Output (Terminal-like) */
+        .log-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            background-color: #000000;
+            padding: 8px;
+            font-size: 11px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .log-entry { margin: 0; padding: 2px 0; border-bottom: 1px dashed #333; }
+        .log-time { color: var(--accent-blue); padding-right: 8px; }
+        .log-level-info { color: var(--text-muted); }
+        .log-level-warn { color: var(--accent-orange); }
+        .log-level-crit { color: var(--accent-red); font-weight: bold; background-color: rgba(244, 67, 54, 0.1); }
+
+        /* Chart Area */
+        .main-chart-area {
+            position: relative;
+            padding: 10px;
+            height: calc(100% - 30px);
+        }
+
+        /* Quick Controls (Bottom) */
+        .controls-panel {
+            grid-column: 2;
+            display: flex;
+            gap: 20px;
+            padding: 10px;
+            align-items: center;
+        }
+
+        .btn-raw {
+            background: #3e3e42;
+            border: 1px solid #555;
+            color: var(--text-main);
+            padding: 4px 12px;
+            font-family: inherit;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .btn-raw:hover { background: #4e4e52; }
+        .btn-raw:active { background: #2d2d30; }
+
+        /* Scrollbar for industrial feel */
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: #424242; border: 1px solid var(--bg-dark); }
+        ::-webkit-scrollbar-thumb:hover { background: #4f4f4f; }
+        
+        .raw-data-overlay {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid var(--accent-orange);
+            padding: 10px;
+            display: none;
+            z-index: 100;
+        }
+
     </style>
 </head>
-<body class="min-h-screen flex flex-col antialiased">
+<body>
 
-    <!-- Top Navigation -->
-    <nav class="border-b border-gray-800 bg-[#161b22] px-6 py-4 flex justify-between items-center z-10">
-        <div class="flex items-center space-x-3">
-            <div class="w-8 h-8 rounded-md bg-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.5)]">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-            </div>
-            <h1 class="text-xl font-semibold tracking-tight text-gray-100">Telemetry Anomaly Engine</h1>
+    <div class="system-header">
+        <h1>Sys::Telemetry_Anomaly_Engine v1.0.4 - [PROD_READONLY]</h1>
+        <div class="status-indicators">
+            <div class="status-item"><span class="led-green"></span> DB_CONN</div>
+            <div class="status-item"><span class="led-green" id="worker-led"></span> CELERY_WORKER</div>
+            <div class="status-item"><span style="color:var(--text-muted)">MODE: MOCK_STREAM</span></div>
         </div>
-        <div class="flex items-center space-x-4 text-sm">
-            <span class="flex items-center space-x-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span class="text-gray-400">System Normal</span>
-            </span>
-            <div class="h-6 w-px bg-gray-700"></div>
-            <a href="https://github.com/tu-usuario/telemetry-anomaly-engine" target="_blank" class="text-gray-400 hover:text-white transition-colors">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path></svg>
-            </a>
-        </div>
-    </nav>
+    </div>
 
-    <!-- Main Content -->
-    <main class="flex-1 p-6 flex flex-col lg:flex-row gap-6">
+    <div class="dashboard-grid">
         
-        <!-- Sidebar Metrics -->
-        <aside class="w-full lg:w-80 flex flex-col gap-4">
-            <!-- Machine Status Panel -->
-            <div class="glass-panel p-5 rounded-xl">
-                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Target Infrastructure</h3>
-                <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
-                            <span class="text-xl">🏭</span>
-                        </div>
-                        <div>
-                            <p class="font-medium text-gray-200">MACH-01 Heavy Duty</p>
-                            <p class="text-xs text-gray-500">Node: us-east-1a</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="space-y-3">
-                    <div class="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="text-xs text-gray-400">Uptime</span>
-                            <span class="text-xs font-mono text-emerald-400">99.98%</span>
-                        </div>
-                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden">
-                            <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 99%"></div>
-                        </div>
-                    </div>
-                    <div class="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="text-xs text-gray-400">Model Precision</span>
-                            <span class="text-xs font-mono text-blue-400">Isolation Forest</span>
-                        </div>
-                        <p class="text-[10px] text-gray-500 mt-1">Processing queue via Redis/Celery</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Alerts Log Panel -->
-            <div class="glass-panel p-5 rounded-xl flex-1 flex flex-col overflow-hidden">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Critical Anomalies</h3>
-                    <span class="px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 text-[10px] font-bold tracking-wider animate-pulse">LIVE</span>
-                </div>
-                <div id="alerts-container" class="flex-1 overflow-y-auto space-y-2 pr-2">
-                    <!-- Alerts injected via JS -->
-                </div>
-            </div>
-        </aside>
-
-        <!-- Charts Area -->
-        <section class="flex-1 flex flex-col gap-6">
+        <!-- Left Sidebar: Hard Metrics & Terminal -->
+        <div class="metrics-sidebar panel">
+            <div class="panel-header">NODE STATUS: MACH-01</div>
             
-            <div class="glass-panel rounded-xl p-5 relative overflow-hidden flex-1 min-h-[300px]">
-                <div class="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent pointer-events-none"></div>
-                <div class="flex justify-between items-end mb-4 relative z-10">
-                    <div>
-                        <h2 class="text-lg font-medium text-gray-100">Telemetry Stream</h2>
-                        <p class="text-xs text-gray-500">Real-time vibration and temperature data points evaluated by Edge AI.</p>
-                    </div>
-                    <div class="flex gap-2">
-                        <span class="px-3 py-1 rounded bg-gray-800 border border-gray-700 text-xs text-gray-400">Mock Data Mode Active</span>
-                    </div>
-                </div>
-                <div class="relative w-full h-[calc(100%-60px)] z-10">
-                    <canvas id="telemetryChart"></canvas>
-                </div>
+            <div class="stat-box">
+                <div style="color: var(--text-muted); font-size: 11px;">PROCESSED VECTORS</div>
+                <div class="stat-value" id="disp-processed">1,024,592</div>
             </div>
 
-             <!-- Bottom Stats row -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="glass-panel p-5 rounded-xl border-l-[3px] border-l-blue-500">
-                    <p class="text-xs text-gray-500 font-medium tracking-wide mb-1">DATA PROCESSED</p>
-                    <p class="text-2xl font-semibold font-mono" id="stat-processed">24,592</p>
-                </div>
-                <div class="glass-panel p-5 rounded-xl border-l-[3px] border-l-emerald-500">
-                    <p class="text-xs text-gray-500 font-medium tracking-wide mb-1">LATENCY (MS)</p>
-                    <p class="text-2xl font-semibold font-mono" id="stat-latency">12.4</p>
-                </div>
-                <div class="glass-panel p-5 rounded-xl border-l-[3px] border-l-red-500 relative overflow-hidden group">
-                    <div class="absolute inset-0 bg-red-500/5 group-hover:bg-red-500/10 transition-colors"></div>
-                    <p class="text-xs text-gray-500 font-medium tracking-wide mb-1 relative z-10">ANOMALIES CAUGHT</p>
-                    <p class="text-2xl font-semibold text-red-400 font-mono relative z-10" id="stat-anomalies">0</p>
+            <div class="stat-box">
+                <div style="color: var(--text-muted); font-size: 11px;">IF_MODEL ANOMALIES DETECTED</div>
+                <div class="stat-value danger" id="disp-anomalies">0</div>
+            </div>
+
+            <div class="stat-box">
+                <div style="color: var(--text-muted); font-size: 11px;">INGEST LATENCY</div>
+                <div class="stat-value ok" id="disp-latency">12ms</div>
+            </div>
+
+            <div class="panel-header" style="border-top: 1px solid var(--border-color); margin-top: auto;">WORKER_STDOUT</div>
+            <div class="log-container" id="terminal-out">
+                <!-- Logs will be appended here -->
+                <div class="log-entry"><span class="log-time" id="init-time"></span> <span class="log-level-info">[INFO]</span> Initializing IF detector model... done.</div>
+                <div class="log-entry"><span class="log-time" id="init-time2"></span> <span class="log-level-info">[INFO]</span> Connecting to Redis broker... ok.</div>
+                <div class="log-entry"><span class="log-time" id="init-time3"></span> <span class="log-level-info">[INFO]</span> Starting telemetry ingestion mock stream @ 1.5s/tick</div>
+            </div>
+        </div>
+
+        <!-- Main Chart -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>SENSOR_TIMESERIES - [VIB_HZ, TMP_C]</span>
+                <span id="chart-refresh-rate">REFRESH: 1.5s</span>
+            </div>
+            <div class="main-chart-area">
+                <canvas id="mainChart"></canvas>
+                <div class="raw-data-overlay" id="raw-overlay">
+                    <pre id="raw-json-dump" style="margin:0; font-size: 10px; color: var(--accent-orange);"></pre>
                 </div>
             </div>
-            
-        </section>
+        </div>
 
-    </main>
+        <!-- Bottom Controls -->
+        <div class="panel controls-panel">
+            <div class="panel-header" style="border:none; padding:0; align-items:center;">CONTROLS:</div>
+            <button class="btn-raw" onclick="toggleRawData()">[TOGGLE_RAW_JSON]</button>
+            <button class="btn-raw" onclick="clearLogs()">[CLEAR_STDOUT]</button>
+            <div style="margin-left: auto; color: var(--text-muted); font-size: 11px;">
+                ENGINE: scikit-learn | ALGO: IsolationForest(contamination=0.05)
+            </div>
+        </div>
+
+    </div>
 
     <script src="app.js"></script>
+    <script>
+        // Set initial boot times
+        const now = new Date();
+        const fTime = () => now.toISOString().split('T')[1].slice(0,-1);
+        document.getElementById('init-time').innerText = fTime();
+        now.setMilliseconds(now.getMilliseconds() + 150);
+        document.getElementById('init-time2').innerText = fTime();
+        now.setMilliseconds(now.getMilliseconds() + 320);
+        document.getElementById('init-time3').innerText = fTime();
+
+        // UI specific functions
+        function toggleRawData() {
+            const el = document.getElementById('raw-overlay');
+            el.style.display = el.style.display === 'block' ? 'none' : 'block';
+        }
+        function clearLogs() {
+            document.getElementById('terminal-out').innerHTML = '';
+        }
+    </script>
 </body>
 </html>

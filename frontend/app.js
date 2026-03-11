@@ -1,210 +1,224 @@
 // Configuration
-const CHART_MAX_POINTS = 50;
-let chartInstance = null;
+const MAX_POINTS = 60; // Keep more history for industrial look
+let chartInst = null;
 
 // State
-const state = {
-    processedCount: 0,
-    anomaliesCaught: 0,
+let processed = 1024592;
+let anomalies = 0;
+const dataQueue = {
     labels: [],
-    temperatureData: [],
-    vibrationData: [],
-    anomalyPoints: [] // Indices where anomalies occurred
+    tmp: [],
+    vib: [],
+    anomalyMarkers: []
 };
 
-// Initialize Chart
-function initChart() {
-    const ctx = document.getElementById('telemetryChart').getContext('2d');
+// Initialize Grafa-style Chart
+function initGrafanaChart() {
+    const ctx = document.getElementById('mainChart').getContext('2d');
     
-    Chart.defaults.color = '#8b949e';
-    Chart.defaults.font.family = "'Inter', sans-serif";
+    // Global defaults for raw look
+    Chart.defaults.color = '#858585';
+    Chart.defaults.font.family = "'Consolas', monospace";
+    Chart.defaults.font.size = 11;
     
-    chartInstance = new Chart(ctx, {
+    chartInst = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: state.labels,
+            labels: dataQueue.labels,
             datasets: [
                 {
-                    label: 'Temperature (°C)',
-                    data: state.temperatureData,
-                    borderColor: '#3b82f6', // Blue
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 2,
-                    tension: 0.4,
+                    label: 'TMP_C',
+                    data: dataQueue.tmp,
+                    borderColor: '#ff9800', // Warning Orange
+                    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                    borderWidth: 1.5,
                     pointRadius: 0,
+                    tension: 0, // Sharp lines, no smoothing in SCADA
                     yAxisID: 'y'
                 },
                 {
-                    label: 'Vibration (Hz)',
-                    data: state.vibrationData,
-                    borderColor: '#10b981', // Emerald
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    borderWidth: 2,
-                    borderDash: [5, 5],
-                    tension: 0.4,
+                    label: 'VIB_HZ',
+                    data: dataQueue.vib,
+                    borderColor: '#007acc', // Tech Blue
+                    backgroundColor: 'transparent',
+                    borderWidth: 1.5,
+                    borderDash: [2, 2], // Grid dash
                     pointRadius: 0,
+                    tension: 0,
                     yAxisID: 'y1'
                 }
             ]
         },
         options: {
+            animation: false, // Turn off animations for raw feel
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
+            interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: {
-                    position: 'top',
-                    labels: { usePointStyle: true, boxWidth: 8 }
-                },
+                legend: { position: 'top', align: 'end', labels: { boxWidth: 10, usePointStyle: false } },
                 tooltip: {
-                    backgroundColor: 'rgba(13, 17, 23, 0.9)',
-                    titleColor: '#c9d1d9',
-                    bodyColor: '#8b949e',
-                    borderColor: '#30363d',
-                    borderWidth: 1
+                    backgroundColor: '#1e1e1e',
+                    titleColor: '#d4d4d4',
+                    bodyColor: '#d4d4d4',
+                    borderColor: '#3e3e42',
+                    borderWidth: 1,
+                    cornerRadius: 0 // Square tooltips
                 }
             },
             scales: {
                 x: {
-                    grid: { display: false, drawBorder: false },
-                    ticks: { maxTicksLimit: 10 }
+                    grid: { color: '#333', drawBorder: true },
+                    ticks: { maxRotation: 0, autoSkipPadding: 20 }
                 },
                 y: {
                     type: 'linear',
                     display: true,
                     position: 'left',
-                    title: { display: true, text: 'Temperature °C' },
-                    grid: { color: 'rgba(48, 54, 61, 0.5)' }
+                    title: { display: true, text: 'TMP_C', font: {size: 10} },
+                    grid: { color: '#333' },
+                    min: 20, max: 120 // Fixed bounds typical of industrial monitors
                 },
                 y1: {
                     type: 'linear',
                     display: true,
                     position: 'right',
-                    title: { display: true, text: 'Vibration Hz' },
-                    grid: { drawOnChartArea: false }
+                    title: { display: true, text: 'VIB_HZ', font: {size: 10} },
+                    grid: { drawOnChartArea: false },
+                    min: 80, max: 200
                 }
             }
         }
     });
+
+    // Handle Anomaly highlighting
+    const originalDraw = chartInst.draw;
+    chartInst.draw = function() {
+        originalDraw.apply(this, arguments);
+        const ctx = this.ctx;
+        const xAxis = this.scales.x;
+        const yAxis = this.scales.y;
+        
+        ctx.save();
+        for (let i = 0; i < dataQueue.anomalyMarkers.length; i++) {
+            if (dataQueue.anomalyMarkers[i]) {
+                const x = xAxis.getPixelForValue(i);
+                // Draw a vertical red warning band
+                ctx.fillStyle = 'rgba(244, 67, 54, 0.2)';
+                ctx.fillRect(x - 5, yAxis.top, 10, yAxis.bottom - yAxis.top);
+                // Draw a sharp red tick
+                ctx.beginPath();
+                ctx.strokeStyle = '#f44336';
+                ctx.lineWidth = 2;
+                ctx.moveTo(x, yAxis.bottom);
+                ctx.lineTo(x, yAxis.top);
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    };
 }
 
-function createAlertElement(data) {
-    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+function appendLog(level, msg) {
+    const term = document.getElementById('terminal-out');
+    const time = new Date().toISOString().split('T')[1].slice(0,-1);
+    
+    let lvlClass = 'log-level-info';
+    let lvlText = '[INFO]';
+    if(level === 'WARN') { lvlClass = 'log-level-warn'; lvlText = '[WARN]'; }
+    if(level === 'CRIT') { lvlClass = 'log-level-crit'; lvlText = '[CRIT]'; }
+
     const div = document.createElement('div');
-    div.className = 'p-3 rounded-lg border border-red-500/30 bg-red-500/5 mb-2 shadow-[0_0_10px_rgba(239,68,68,0.1)] transition-all duration-300 transform origin-top hover:scale-[1.02]';
+    div.className = 'log-entry';
+    div.innerHTML = `<span class="log-time">${time}</span> <span class="${lvlClass}">${lvlText}</span> ${msg}`;
     
-    div.innerHTML = `
-        <div class="flex justify-between items-start mb-1">
-            <span class="text-xs font-bold text-red-500">THREAT ALERT</span>
-            <span class="text-[10px] text-gray-500 font-mono">${time}</span>
-        </div>
-        <p class="text-sm text-gray-300 font-mono mb-2">IsolationForest Score: <span class="text-red-400 font-bold">${data.score.toFixed(4)}</span></p>
-        <div class="flex gap-2">
-            <span class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-[10px] text-gray-400">Temp: ${data.temp.toFixed(1)}°C</span>
-            <span class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-[10px] text-gray-400">Vib: ${data.vib.toFixed(1)}Hz</span>
-        </div>
-    `;
-    return div;
+    term.appendChild(div);
+    if(term.childNodes.length > 50) term.removeChild(term.firstChild); // Keep terminal pruned
+    term.scrollTop = term.scrollHeight; // Auto-scroll
 }
 
-function mockDataStream() {
-    setInterval(() => {
-        const timeStr = new Date().toLocaleTimeString('en-US', { minute: '2-digit', second:'2-digit' });
-        
-        // Base normal metrics
-        let t = 45 + (Math.random() * 5 - 2.5); // 42.5 - 47.5
-        let v = 105 + (Math.random() * 4 - 2);  // 103 - 107
-        let isAnomaly = false;
-        let score = 0.5 + Math.random() * 0.2; // roughly normal score
-        
-        // 5% chance of simulating a critical failure anomaly
-        if (Math.random() < 0.05) {
-            isAnomaly = true;
-            t = 80 + Math.random() * 20; // Spike temp
-            v = 150 + Math.random() * 30; // Spike vibration
-            score = -0.1 - Math.random() * 0.3; // Negative score from IF
-        }
-        
-        // Update Chart Data
-        if (state.labels.length >= CHART_MAX_POINTS) {
-            state.labels.shift();
-            state.temperatureData.shift();
-            state.vibrationData.shift();
-            
-            // Re-map anomaly point coloring
-            const ds = chartInstance.data.datasets;
-            [ds[0], ds[1]].forEach(dataset => {
-                if (dataset.pointBackgroundColor) {
-                    dataset.pointBackgroundColor.shift();
-                    dataset.pointRadius.shift();
-                    dataset.pointBorderWidth.shift();
-                }
-            });
-        }
-
-        state.labels.push(timeStr);
-        state.temperatureData.push(t);
-        state.vibrationData.push(v);
-        
-        // Handle visual anomaly highlights on chart
-        const ds = chartInstance.data.datasets;
-        [ds[0], ds[1]].forEach(dataset => {
-            if(!dataset.pointBackgroundColor) {
-                dataset.pointBackgroundColor = [];
-                dataset.pointRadius = [];
-                dataset.pointBorderWidth = [];
-            }
-            if(isAnomaly) {
-                dataset.pointBackgroundColor.push('#ef4444'); // Red point
-                dataset.pointRadius.push(6);
-                dataset.pointBorderWidth.push(2);
-            } else {
-                dataset.pointBackgroundColor.push('transparent');
-                dataset.pointRadius.push(0);
-                dataset.pointBorderWidth.push(0);
-            }
-        });
-
-        // Update UI Stats
-        state.processedCount++;
-        document.getElementById('stat-processed').innerText = state.processedCount.toLocaleString();
-        document.getElementById('stat-latency').innerText = (10 + Math.random() * 8).toFixed(1);
-        
-        if (isAnomaly) {
-            state.anomaliesCaught++;
-            document.getElementById('stat-anomalies').innerText = state.anomaliesCaught;
-            
-            // Add alert log
-            const container = document.getElementById('alerts-container');
-            const alertEl = createAlertElement({ temp: t, vib: v, score });
-            container.prepend(alertEl);
-            
-            // keep only last 10 alerts
-            if(container.children.length > 10) {
-                container.lastElementChild.remove();
-            }
-        }
-
-        chartInstance.update();
-        
-    }, 1500); // 1.5 second tick rate
-}
-
-// Bootstrap
-document.addEventListener('DOMContentLoaded', () => {
-    initChart();
+function dataTick() {
+    const nowStr = new Date().toISOString().split('T')[1].substring(0,8);
     
-    // Fill initial data so chart isn't empty
-    for(let i=0; i<30; i++) {
-        state.labels.push("");
-        state.temperatureData.push(45 + (Math.random() * 5 - 2.5));
-        state.vibrationData.push(105 + (Math.random() * 4 - 2));
+    // Normal sensor variance (baseline)
+    let tempVal = 42 + (Math.random() * 8); // 42-50
+    let vibVal = 100 + (Math.random() * 10); // 100-110
+    let isSpike = false;
+    let score = (0.5 + Math.random() * 0.3).toFixed(4);
+    
+    // 4% probability to trigger IF Model anomaly scenario
+    if (Math.random() < 0.04) {
+        isSpike = true;
+        tempVal = 85 + (Math.random() * 30); // Danger temp
+        vibVal = 150 + (Math.random() * 40); // Danger vib
+        score = (-0.2 - Math.random() * 0.5).toFixed(4); // IF outputs negative for anomalies
     }
-    chartInstance.update();
+
+    // Queue management
+    if (dataQueue.labels.length >= MAX_POINTS) {
+        dataQueue.labels.shift();
+        dataQueue.tmp.shift();
+        dataQueue.vib.shift();
+        dataQueue.anomalyMarkers.shift();
+    }
+
+    dataQueue.labels.push(nowStr);
+    dataQueue.tmp.push(tempVal);
+    dataQueue.vib.push(vibVal);
+    dataQueue.anomalyMarkers.push(isSpike);
+
+    chartInst.update();
+
+    // Stats UI Update
+    processed++;
+    document.getElementById('disp-processed').innerText = processed.toLocaleString();
+    document.getElementById('disp-latency').innerText = (8 + (Math.random() * 15)).toFixed(1) + 'ms';
     
-    // Start simulation
-    setTimeout(mockDataStream, 500);
+    // Raw JSON Dump Update
+    const rawData = {
+        machine_id: "MACH-01",
+        timestamp: new Date().toISOString(),
+        metrics: { tmp_c: tempVal.toFixed(2), vib_hz: vibVal.toFixed(2) },
+        ml_eval: { if_score: parseFloat(score), is_anomaly: isSpike }
+    };
+    document.getElementById('raw-json-dump').innerText = JSON.stringify(rawData, null, 2);
+
+    // Logging
+    if (isSpike) {
+        anomalies++;
+        document.getElementById('disp-anomalies').innerText = anomalies;
+        
+        // Blink LED
+        const led = document.getElementById('worker-led');
+        led.className = 'led-red';
+        setTimeout(() => led.className = 'led-green', 1500);
+
+        appendLog('CRIT', `IsolationForest::Anomaly detected! Score: ${score} | TMP: ${tempVal.toFixed(1)} | VIB: ${vibVal.toFixed(1)}`);
+        
+        // Sometimes append a sub-action to look real
+        setTimeout(() => {
+            appendLog('WARN', `Brokering task to PagerDuty... (simulated)`);
+        }, 300);
+    } else {
+        // Occasional heartbeat log
+        if (Math.random() < 0.1) {
+            appendLog('INFO', `Heartbeat OK. Score: ${score}`);
+        }
+    }
+}
+
+// Boot Sequence
+document.addEventListener('DOMContentLoaded', () => {
+    initGrafanaChart();
+    
+    // Pre-fill graph for instant view
+    for(let i=0; i<MAX_POINTS; i++) {
+        dataQueue.labels.push("");
+        dataQueue.tmp.push(42 + (Math.random() * 8));
+        dataQueue.vib.push(100 + (Math.random() * 10));
+        dataQueue.anomalyMarkers.push(false);
+    }
+    chartInst.update();
+    
+    // Begin stream
+    setInterval(dataTick, 1500);
 });
