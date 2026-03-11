@@ -1,0 +1,23 @@
+[
+    {
+        "timestamp": "2026-03-10T12:00:00Z",
+        "temperature": 45.2,
+        "vibration": 105.1,
+        "cpu_usage": 20.1,
+        "is_anomaly": false
+    },
+    {
+        "timestamp": "2026-03-10T12:00:01Z",
+        "temperature": 46.1,
+        "vibration": 106.3,
+        "cpu_usage": 19.8,
+        "is_anomaly": false
+    },
+    {
+        "timestamp": "2026-03-10T12:00:02Z",
+        "temperature": 85.5,
+        "vibration": 145.2,
+        "cpu_usage": 92.1,
+        "is_anomaly": true
+    }
+]
