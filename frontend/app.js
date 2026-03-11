@@ -87,35 +87,34 @@ function initGrafanaChart() {
                     min: 80, max: 200
                 }
             }
-        }
-    });
-
-    // Handle Anomaly highlighting
-    const originalDraw = chartInst.draw;
-    chartInst.draw = function() {
-        originalDraw.apply(this, arguments);
-        const ctx = this.ctx;
-        const xAxis = this.scales.x;
-        const yAxis = this.scales.y;
-        
-        ctx.save();
-        for (let i = 0; i < dataQueue.anomalyMarkers.length; i++) {
-            if (dataQueue.anomalyMarkers[i]) {
-                const x = xAxis.getPixelForValue(i);
-                // Draw a vertical red warning band
-                ctx.fillStyle = 'rgba(244, 67, 54, 0.2)';
-                ctx.fillRect(x - 5, yAxis.top, 10, yAxis.bottom - yAxis.top);
-                // Draw a sharp red tick
-                ctx.beginPath();
-                ctx.strokeStyle = '#f44336';
-                ctx.lineWidth = 2;
-                ctx.moveTo(x, yAxis.bottom);
-                ctx.lineTo(x, yAxis.top);
-                ctx.stroke();
+        },
+        plugins: [{
+            id: 'anomalyHighlight',
+            beforeDraw: (chart) => {
+                const { ctx, chartArea, scales: { x } } = chart;
+                if (!chartArea) return;
+                const { top, bottom } = chartArea;
+                
+                ctx.save();
+                for (let i = 0; i < dataQueue.anomalyMarkers.length; i++) {
+                    if (dataQueue.anomalyMarkers[i]) {
+                        const xPos = x.getPixelForValue(i);
+                        // Draw a vertical red warning band
+                        ctx.fillStyle = 'rgba(244, 67, 54, 0.2)';
+                        ctx.fillRect(xPos - 5, top, 10, bottom - top);
+                        // Draw a sharp red tick
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#f44336';
+                        ctx.lineWidth = 2;
+                        ctx.moveTo(xPos, bottom);
+                        ctx.lineTo(xPos, top);
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
             }
-        }
-        ctx.restore();
-    };
+        }]
+    });
 }
 
 function appendLog(level, msg) {
